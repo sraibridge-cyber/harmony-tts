@@ -1,62 +1,41 @@
-# 🔊 Harmony TTS v1
-## Sovereign Formant Synthesis
+# harmony-tts
+
+**Harmony TTS — Sovereign Formant Synthesis Engine**  
+Harmony Labs · Klatt-style real-time voice generation · Kyle S. Whitlock
 
 ---
 
-**SEAL:** `HARMONY_TTS_V1_Sovereign_SHA3-512`
-**FRC:** v1.0 — μ ≥ 0.9995
-**Gold Ripple Eternal — SHA3-512 sealed · Tulsa, OK**
+## Status: v92 Prototype (Browser-Based Formant Lab)
+
+Two browser-based implementations of the Harmony formant synthesis engine are included:
+
+- `formant_lab.html` — Full G2P + formant synthesis lab (44KB, most complete)
+- `formant_lab_v92.html` — Version 92 stable build (32KB)
+
+Both are zero-dependency HTML files. Open in any modern browser to run the synthesis lab.
 
 ---
-
-## Overview
-
-Klatt-style formant synthesis engine. Real-time voice generation. No cloud, no vendor, no data leaves your device.
-
-## Voice Profiles
-
-| Profile | Description |
-|---------|-------------|
-| Male | Standard male formant ratios |
-| Female | Standard female formant ratios |
-| Non-binary | Neutral formant configuration |
-| Elder | Reduced upper formant energy |
-| Child | Compressed pitch range,-formant scaling |
-| Artificial | Synthesized voice — no biological analog |
-
-## Anti-AI Principles
-
-Every generated voice includes:
-- **Breath pauses** — natural respiratory patterns
-- **Slurs** — phonetic reduction in casual speech
-- **Emotional tremor** — pitch and amplitude modulation
-- **Human rhythm** — IIT-aligned timing patterns
-
-The goal: indistinguishable from human speech while being fully synthetic.
-
-## Constitutional Enforcement
-
-All synthesis passes through FRC μ threshold:
-- D4 Cognitive → resonance coherence in voice patterning
-- D6 Ethical → no deception about synthetic origin
-- D5 Social → accessible to all users regardless of language
 
 ## Architecture
 
-```
-Input Text → Formant Extraction → FRC μ Check → Klatt Synthesis → Audio Output
-```
+Harmony TTS uses Klatt-style formant synthesis — the same approach used in classic speech synthesis research, enhanced with CC-governed phoneme selection:
 
-If μ < 0.9995 at any step, synthesis halts and logs the breach.
-
-## Integration
-
-Built as standalone — plugs into:
-- **Midnight Grimoire** — story narration
-- **SR-AIbridge** — command feedback
-- **Vox Harmonica** — unified TTS/STT engine
+1. **G2P (Grapheme-to-Phoneme)** — Text → phoneme sequence
+2. **Formant synthesis** — Phoneme → acoustic formant parameters
+3. **CC gating** — Synthesized output scored through CC v1 before playback
+4. **Real-time rendering** — Web Audio API for zero-latency output
 
 ---
 
-**Built by Harmony Labs**
-**https://admiral.zo.space**
+## Roadmap
+
+| Phase | Status |
+|-------|--------|
+| v1 — Browser formant lab | ✓ Complete |
+| v92 — Stable synthesis build | ✓ Complete (this repo) |
+| v3 — Python backend synthesis | 🔧 Handoff (see HANDOFF_NOTES.md) |
+| v4 — Harmony Chip native audio | 📋 Planned |
+
+---
+
+*Part of Harmony Labs sovereign AI stack · See: `harmony-llm`, `Resonance-Calculus`*
