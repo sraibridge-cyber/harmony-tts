@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Formant Lab v92</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:'Segoe UI',system-ui,sans-serif}
+:root{--bg:#0c0c1a;--bg2:#1a1a2e;--bg3:#252540;--brd:#333355;--t:#e0e0ff;--t2:#a0a0cc;--g:#4ade80;--b:#60a5fa;--y:#fbbf24;--r:#e11d48;--gold:#ffd700}
+body{background:var(--bg);color:var(--t);padding:20px}
+h1{font-size:1.4rem;color:var(--gold);margin-bottom:4px}
+.sub{color:var(--t2);font-size:.8rem;margin-bottom:20px}
+.wrap{max-width:720px;margin:0 auto}
+.p{background:var(--bg2);border:1px solid var(--brd);border-radius:12px;padding:16px;margin-bottom:16px}
+.pt{font-size:.95rem;color:var(--gold);margin-bottom:12px;font-weight:600}
+.m{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.mb{padding:8px 16px;border:1px solid var(--brd);background:var(--bg3);color:var(--t2);border-radius:8px;cursor:pointer;font-size:.8rem}
+.mb.on{background:var(--b);color:#fff;border-color:var(--b)}
+ta{width:100%;background:var(--bg3);border:1px solid var(--brd);color:var(--t);padding:12px;border-radius:8px;font-size:1rem;resize:vertical;min-height:80px}
+.br{display:flex;gap:10px;margin-top:12px;flex-wrap:wrap}
+.btn{padding:10px 20px;border:none;border-radius:8px;cursor:pointer;font-size:.85rem;font-weight:600}
+.bp{background:var(--r);color:#fff}
+.bs{background:var(--bg3);color:var(--t);border:1px solid var(--brd)}
+.sl{display:flex;align-items:center;gap:10px;margin:8px 0}
+.sl label{width:100px;font-size:.75rem;color:var(--t2)}
+.sl input[type=range]{flex:1;min-width:100px}
+.sl .v{width:50px;text-align:right;font-size:.75rem;color:var(--gold)}
+.st{background:var(--bg3);border-radius:8px;padding:10px;font-size:.75rem;color:var(--t2);margin-top:12px;font-family:monospace;white-space:pre-wrap;max-height:400px;overflow-y:auto}
+.ph{background:var(--bg3);border-radius:8px;padding:10px;margin-top:12px;font-family:monospace;font-size:.7rem;color:var(--t2)}
+.pv{color:var(--g)}.pc{color:var(--gold)}.pp{color:var(--t2)}
+canvas#sc{width:100%;height:180px;background:#0a0a14;border:1px solid var(--brd);border-radius:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Formant Lab v92</h1>
+<div class="sub">Rosenberg pulse + parallel bandpass + Hillenbrand formants + 3x volume</div>
+<div class="m">
+  <button class="mb on" id="bF" onclick="mode='f'">Formant</button>
+  <button class="mb" id="bS" onclick="mode='s'">Web Speech</button>
+  <button class="mb" id="bT" onclick="mode='t'">Tone</button>
+</div>
+<div class="p">
+  <div class="pt">Text</div>
+  <textarea id="ti">Hello world. This is a test.</textarea>
+  <div class="br">
+    <button class="btn bp" onclick="speak()">Speak</button>
+    <button class="btn bs" onclick="stop()">Stop</button>
+    <button class="btn bs" onclick="test()">Test</button>
+  </div>
+</div>
+<div class="p">
+  <div class="pt">Voice Parameters</div>
+  <div class="sl"><label>Pitch (F0)</label><input type="range" id="sP" min="60" max="400" value="250"><span class="v" id="vP">250</span></div>
+  <div class="sl"><label>Speed</label><input type="range" id="sS" min="20" max="200" value="35"><span class="v" id="vS">0.35</span></div>
+  <div class="sl"><label>Throat</label><input type="range" id="sC" min="70" max="150" value="100"><span class="v" id="vC">1.00</span></div>
+  <div class="sl"><label>Breath</label><input type="range" id="sB" min="0" max="100" value="20"><span class="v" id="vB">0.20</span></div>
+  <div class="sl"><label>Vibrato</label><input type="range" id="sV" min="0" max="50" value="12"><span class="v" id="vV">0.12</span></div>
+  <div class="sl"><label>Volume</label><input type="range" id="sL" min="0" max="100" value="90"><span class="v" id="vL">0.90</span></div>
+</div>
+<div class="p">
+  <div class="pt">Spectrum</div>
+  <canvas id="sc" width="680" height="180"></canvas>
+</div>
+<div class="p">
+  <div class="pt">Phoneme Audit</div>
+  <div class="br">
+    <button class="btn bp" onclick="analyze()">Analyze Last</button>
+    <button class="btn bs" onclick="showAudit()">Show Audit</button>
+  </div>
+  <div class="st" id="ab">Press Speak, then Analyze Last...</div>
+</div>
+<div class="p">
+  <div class="pt">Debug Log</div>
+  <div class="st" id="sb" style="max-height:120px">Ready...</div>
+  <div class="ph" id="pb">Phonemes here...</div>
+</div>
+</div>
+
+<script>
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+//  FORMANT LAB v92 â Research-backed complete rebuild
+//  Architecture: Rosenberg pulse â 3 parallel bandpass biquads
+//  Formants: Hillenbrand 1995 + Wikipedia reference data
+//  Volume: 3x master gain
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+// ââ Rosenberg glottal pulse coefficients (precomputed, effort=0.5) ââ
+const ROSENBERG_REAL = [0,0.2996,0.2644,0.1213,0.1190,0.0729,0.0587,0.0391,0.0345,0.0357,0.0323,0.0317,0.0249,0.0230,0.0201,0.0203,0.0202,0.0176,0.0168,0.0151,0.0149,0.0143,0.0132,0.0128,0.0120,0.0118,0.0113,0.0107,0.0105,0.0101,0.0099,0.0095,0.0093];
+const ROSENBERG_IMAG = new Float32Array(32);
+
+// ââ Vowel formants: Hillenbrand 1995 (male, American English) ââ
+// Format: [F1, F2, F3, bandwidth1, bandwidth2, bandwidth3]
+const VOWELS = {
+  'iy': [280,2230,3080, 130,70,160],  // beat
+  'ih': [370,2090,2750, 130,70,160],  // bit
+  'ey': [405,2080,2690, 130,70,160],  // bait
+  'eh': [600,1930,2570, 130,70,160],  // bet
+  'ae': [860,1550,2470, 130,70,160],  // bat
+  'aa': [830,1170,2540, 130,70,160],  // hot
+  'ao': [560, 820,2540, 130,70,160],  // caught
+  'ow': [430, 980,2540, 130,70,160],  // boat
+  'uh': [400,1100,2380, 130,70,160],  // book
+  'uw': [330,1260,2380, 130,70,160],  // boot
+  'er': [500,1500,1700, 130,70,160],  // bird
+  'ah': [680,1310,2540, 130,70,160],  // but
+};
+
+// ââ ARPABet phoneme to formant mapping ââ
+const PHONEMES = {
+  // Vowels
+  'AA': 'aa', 'AE': 'ae', 'AH': 'ah', 'AO': 'ao', 'AW': 'aw', 'AY': 'ay',
+  'EH': 'eh', 'ER': 'er', 'EY': 'ey', 'IH': 'ih', 'IY': 'iy', 'OW': 'ow',
+  'OY': 'oy', 'UH': 'uh', 'UW': 'uw',
+  // Consonants (use nearest vowel formants + adjustments)
+  'B': 'cons_b', 'D': 'cons_d', 'G': 'cons_g', 'P': 'cons_p', 'T': 'cons_t', 'K': 'cons_k',
+  'V': 'cons_v', 'Z': 'cons_z', 'ZH': 'cons_zh', 'F': 'cons_f', 'S': 'cons_s', 'SH': 'cons_sh',
+  'TH': 'cons_th', 'DH': 'cons_dh', 'CH': 'cons_ch', 'JH': 'cons_jh',
+  'M': 'cons_m', 'N': 'cons_n', 'NG': 'cons_ng',
+  'L': 'cons_l', 'R': 'cons_r', 'W': 'cons_w', 'Y': 'cons_y',
+  'HH': 'cons_h',
+  // Silence
+  'SP': 'sp', 'PAUSE': 'pause'
+};
+
+// ââ Simple G2P: text â ARPABet ââ
+function g2p(text) {
+  var t = text.toLowerCase().trim();
+  var out = [];
+  var i = 0;
+  while (i < t.length) {
+    var c = t[i], n = t[i+1] || '', nn = t[i+2] || '';
+    // Word boundary â mark stress
+    if (c === ' ') { out.push('SP'); i++; continue; }
+    if ('.,!?;'.indexOf(c) >= 0) { out.push('PAUSE'); i++; continue; }
+    // Vowel digraphs
+    if (c === 'a') {
+      if (n === 'i' || n === 'y') { out.push('AY'); i += 2; continue; }
+      if (n === 'u') { out.push('AW'); i += 2; continue; }
+      if (n === 'e' && (t[i+2] || '') !== ' ') { out.push('EY'); i += 2; continue; }
+      if (n === 'r') { out.push('AA'); i += 2; continue; }
+      out.push('AE'); i++; continue;
+    }
+    if (c === 'e') {
+      if (n === 'e') { out.push('IY'); i += 2; continue; }
+      if (n === 'i') { out.push('EY'); i += 2; continue; }
+      if (n === 'r') { out.push('ER'); i += 2; continue; }
+      out.push('EH'); i++; continue;
+    }
+    if (c === 'i') {
+      if (n === 'e' || n === 'g' && nn === 'h') { out.push('AY'); i += (n==='e'?2:3); continue; }
+      out.push('IH'); i++; continue;
+    }
+    if (c === 'o') {
+      if (n === 'o') { out.push('UW'); i += 2; continue; }
+      if (n === 'i' || n === 'y') { out.push('OY'); i += 2; continue; }
+      if (n === 'u') { out.push('AW'); i += 2; continue; }
+      if (n === 'w') { out.push('OW'); i += 2; continue; }
+      if (n === 'r') { out.push('AO'); i += 2; continue; }
+      out.push('OW'); i++; continue;
+    }
+    if (c === 'u') {
+      if (n === 'r') { out.push('ER'); i += 2; continue; }
+      out.push('UH'); i++; continue;
+    }
+    if (c === 'y') { out.push('IH'); i++; continue; }
+    // Consonants
+    if (c === 'b') { out.push('B'); i++; continue; }
+    if (c === 'd') { out.push('D'); i++; continue; }
+    if (c === 'g') { out.push('G'); i++; continue; }
+    if (c === 'p') { out.push('P'); i++; continue; }
+    if (c === 't') {
+      if (n === 'h') { out.push('TH'); i += 2; continue; }
+      if (n === 'r') { out.push('CH'); i += 2; continue; }
+      if (n === 's') { out.push('CH'); i += 2; continue; }
+      out.push('T'); i++; continue;
+    }
+    if (c === 'k') { out.push('K'); i++; continue; }
+    if (c === 'c') {
+      if (n === 'h') { out.push('CH'); i += 2; continue; }
+      if ('eiy'.indexOf(n) >= 0) { out.push('S'); i++; continue; }
+      out.push('K'); i++; continue;
+    }
+    if (c === 'v') { out.push('V'); i++; continue; }
+    if (c === 'z') { out.push('Z'); i++; continue; }
+    if (c === 'f') { out.push('F'); i++; continue; }
+    if (c === 's') {
+      if (n === 'h') { out.push('SH'); i += 2; continue; }
+      if (n === 't') { out.push('S'); i += 2; continue; }
+      out.push('S'); i++; continue;
+    }
+    if (c === 'h') { out.push('HH'); i++; continue; }
+    if (c === 'j') { out.push('JH'); i++; continue; }
+    if (c === 'm') { out.push('M'); i++; continue; }
+    if (c === 'n') {
+      if (n === 'g') { out.push('NG'); i += 2; continue; }
+      out.push('N'); i++; continue;
+    }
+    if (c === 'l') { out.push('L'); i++; continue; }
+    if (c === 'r') { out.push('R'); i++; continue; }
+    if (c === 'w') { out.push('W'); i++; continue; }
+    if (c === 'x') { out.push('K'); out.push('S'); i++; continue; }
+    if (c === 'q') { out.push('K'); i++; continue; }
+    i++; // skip unknown
+  }
+  return out;
+}
+
+// ââ UI ââ
+var mode = 'f';
+var ctx = null, sources = [], analyser = null;
+var lastAudit = [];
+
+function log(m) {
+  var el = document.createElement('div');
+  el.textContent = '[' + new Date().toLocaleTimeString() + '] ' + m;
+  document.getElementById('sb').appendChild(el);
+  document.getElementById('sb').scrollTop = 99999;
+  while (document.getElementById('sb').children.length > 20) {
+    document.getElementById('sb').removeChild(document.getElementById('sb').firstChild);
+  }
+}
+
+function getCtx() {
+  if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ctx.state === 'suspended') ctx.resume();
+  return ctx;
+}
+
+function getVoice() {
+  return {
+    f0: +document.getElementById('sP').value,
+    speed: +document.getElementById('sS').value / 100,
+    scale: +document.getElementById('sC').value / 100,
+    breath: +document.getElementById('sB').value / 100,
+    vibrato: +document.getElementById('sV').value / 100,
+    volume: +document.getElementById('sL').value / 100
+  };
+}
+
+function stop() {
+  sources.forEach(function(s) { try { s.stop(); } catch(e) {} });
+  sources = [];
+  log('Stopped');
+}
+
+// ââ Slider handlers ââ
+document.getElementById('sP').oninput = function() { document.getElementById('vP').textContent = this.value; };
+document.getElementById('sS').oninput = function() { document.getElementById('vS').textContent = (this.value/100).toFixed(2); };
+document.getElementById('sC').oninput = function() { document.getElementById('vC').textContent = (this.value/100).toFixed(2); };
+document.getElementById('sB').oninput = function() { document.getElementById('vB').textContent = (this.value/100).toFixed(2); };
+document.getElementById('sV').oninput = function() { document.getElementById('vV').textContent = (this.value/100).toFixed(2); };
+document.getElementById('sL').oninput = function() { document.getElementById('vL').textContent = (this.value/100).toFixed(2); };
+
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+//  CORE SYNTHESIS: Rosenberg pulse + 3 parallel bandpass biquads
+// âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+function speak() {
+  var text = document.getElementById('ti').value;
+  if (!text.trim()) return;
+  if (mode === 's') { speakWS(text); return; }
+  if (mode === 't') { speakTone(text); return; }
+
+  var voice = getVoice();
+  var ph = g2p(text);
+  var auditPh = ph.map(function(p) {
+    var v = VOWELS[p.toLowerCase()];
+    return v ? '<span class="pv">' + p + '</span>' : '<span class="pc">' + p + '</span>';
+  }).join(' ');
+  document.getElementById('pb').innerHTML = auditPh;
+
+  var c = getCtx();
+  var now = c.currentTime;
+
+  // 3x master volume
+  var master = c.createGain();
+  master.gain.value = voice.volume * 3.0;
+  master.connect(c.destination);
+
+  // Analyser for spectrum display
+  if (!analyser) {
+    analyser = c.createAnalyser();
+    analyser.fftSize = 2048;
+    analyser.smoothingTimeConstant = 0.85;
+  }
+  master.connect(analyser);
+
+  // Build phoneme notes
+  var notes = [];
+  var isFirstVowel = true;
+  for (var pi = 0; pi < ph.length; pi++) {
+    var sym = ph[pi];
+    var vkey = sym.toLowerCase();
+    var vd = VOWELS[vkey];
+
+    if (sym === 'SP') {
+      notes.push({type:'sp', dur:70*voice.speed});
+      isFirstVowel = true;
+    } else if (sym === 'PAUSE') {
+      notes.push({type:'pause', dur:250*voice.speed});
+    } else if (vd) {
+      // Vowel
+      var f1 = vd[0] * voice.scale, f2 = vd[1] * voice.scale, f3 = vd[2] * voice.scale;
+      var bw1 = vd[3], bw2 = vd[4], bw3 = vd[5];
+      var isStressed = isFirstVowel;
+      var dur = isStressed ? 320 * voice.speed : 200 * voice.speed;
+      var gain = isStressed ? 0.50 : 0.32;
+      notes.push({type:'vowel', sym:sym, f1:f1, f2:f2, f3:f3, bw1:bw1, bw2:bw2, bw3:bw3,
+                  dur:dur, gain:gain, stressed:isStressed, f0:voice.f0});
+      isFirstVowel = false;
+    } else {
+      // Consonant
+      var ctype = sym;
+      var cDur, cGain, cf1, cf2, cf3;
+      if ('PTK'.indexOf(sym) >= 0) { cDur=40; cGain=0.08; cf1=350; cf2=2200; cf3=2800; }
+      else if ('BDG'.indexOf(sym) >= 0) { cDur=50; cGain=0.12; cf1=280; cf2=1400; cf3=2200; }
+      else if ('FS'.indexOf(sym) >= 0) { cDur=100; cGain=0.10; cf1=350; cf2=4800; cf3=6500; }
+      else if ('VZ'.indexOf(sym) >= 0) { cDur=80; cGain=0.14; cf1=280; cf2=1400; cf3=2200; }
+      else if ('SH'.indexOf(sym) >= 0) { cDur=100; cGain=0.10; cf1=300; cf2=2800; cf3=3500; }
+      else if ('TH'.indexOf(sym) >= 0) { cDur=90; cGain=0.08; cf1=350; cf2=5800; cf3=7200; }
+      else if ('MN'.indexOf(sym) >= 0) { cDur=60; cGain=0.16; cf1=280; cf2=1400; cf3=2200; }
+      else if ('LR'.indexOf(sym) >= 0) { cDur=55; cGain=0.18; cf1=350; cf2=1200; cf3=2200; }
+      else if ('WY'.indexOf(sym) >= 0) { cDur=45; cGain=0.14; cf1=300; cf2=700; cf3=2200; }
+      else if (sym === 'HH') { cDur=60; cGain=0.06; cf1=350; cf2=1200; cf3=2800; }
+      else if ('CHJH'.indexOf(sym) >= 0) { cDur=90; cGain=0.10; cf1=350; cf2=2600; cf3=3500; }
+      else { cDur=40; cGain=0.06; cf1=350; cf2=2000; cf3=2800; }
+      notes.push({type:'cons', sym:sym, dur:cDur*voice.speed, gain:cGain,
+                  f1:cf1*voice.scale, f2:cf2*voice.scale, f3:cf3*voice.scale,
+                  bw1:130, bw2:70, bw3:160});
+    }
+  }
+
+  // Pitch contour
+  var totalDur = notes.reduce(function(s,n) { return s + n.dur; }, 0);
+  var acc = 0;
+  var f0v = notes.map(function(n, i) {
+    var t = totalDur > 0 ? acc / totalDur : 0;
+    var f = voice.f0;
+    if (n.type === 'vowel') {
+      f += 6 * Math.sin(t * Math.PI) - 5 * t;
+      if (n.stressed) f += 10;
+    } else {
+      f *= 0.7;
+    }
+    acc += n.dur;
+    return Math.max(55, Math.min(400, f));
+  });
+
+  // Synthesize
+  var time = now;
+  var OL = 0.080;
+  var WG = 0.350;
+  var audit = [];
+
+  // Pre-create Rosenberg PeriodicWave
+  var rosenReal = new Float32Array(ROSENBERG_REAL.length);
+  for (var ri = 0; ri < ROSENBERG_REAL.length; ri++) rosenReal[ri] = ROSENBERG_REAL[ri];
+  var rosenImag = new Float32Array(ROSENBERG_REAL.length);
+
+  for (var ni = 0; ni < notes.length; ni++) {
+    var note = notes[ni];
+    var prev = notes[ni-1] || note;
+    var next = notes[ni+1] || note;
+    var dur = note.dur / 1000;
+    var startT = Math.max(now, time - OL * 0.3);
+    var endT = time + dur + OL * 0.2;
+
+    if (note.type === 'sp') {
+      time += dur + WG;
+      audit.push({idx:ni, sym:'sp', type:'SPACE', dur:Math.round(note.dur)+'ms'});
+      continue;
+    }
+    if (note.type === 'pause') {
+      time += dur;
+      audit.push({idx:ni, sym:'ps', type:'PAUSE', dur:Math.round(note.dur)+'ms'});
+      continue;
+    }
+
+    // Envelope
+    var env = c.createGain();
+    env.gain.setValueAtTime(0.001, startT);
+    env.gain.exponentialRampToValueAtTime(1.0, time + OL * 0.4);
+    env.gain.setValueAtTime(1.0, time + dur - OL * 0.2);
+    env.gain.exponentialRampToValueAtTime(0.001, time + dur + OL * 0.2);
+    env.connect(master);
+
+    // Vibrato
+    var vibNode = null;
+    if (voice.vibrato > 0 && note.type === 'vowel') {
+      var vib = c.createOscillator();
+      vib.frequency.value = 5.0;
+      var vibG = c.createGain();
+      vibG.gain.value = f0v[ni] * voice.vibrato * 0.01;
+      vib.connect(vibG);
+      vib.start(startT);
+      vib.stop(endT);
+      sources.push(vib);
+      vibNode = vibG;
+    }
+
+    if (note.type === 'vowel') {
+      // ââ VOWEL: Rosenberg pulse through 3 parallel bandpass biquads ââ
+      var f0 = f0v[ni];
+      var pF0 = (ni > 0 && notes[ni-1].type === 'vowel') ? f0v[ni-1] : f0;
+      var nF0 = (ni + 1 < notes.length && notes[ni+1].type === 'vowel') ? f0v[ni+1] : f0 * 0.6;
+      var tF1 = next.f1 || note.f1;
+      var tF2 = next.f2 || note.f2;
+      var tF3 = next.f3 || note.f3;
+
+      // Main source: Rosenberg pulse at F0
+      var src = c.createOscillator();
+      src.setPeriodicWave(c.createPeriodicWave(rosenReal, rosenImag, {disableNormalization:false}));
+      src.frequency.setValueAtTime(Math.max(45, pF0), startT);
+      src.frequency.linearRampToValueAtTime(Math.max(45, f0), time + OL * 0.5);
+      src.frequency.linearRampToValueAtTime(Math.max(45, nF0), time + dur);
+      if (vibNode) vibNode.connect(src.frequency);
+      var srcG = c.createGain();
+      srcG.gain.value = note.gain * 0.6;
+      src.connect(srcG);
+      src.start(startT);
+      src.stop(endT + 0.01);
+      sources.push(src);
+
+      // F1 formant (parallel bandpass)
+      var f1F = c.createBiquadFilter();
+      f1F.type = 'bandpass';
+      f1F.frequency.setValueAtTime(Math.max(50, prev.f1 || note.f1), startT);
+      f1F.frequency.linearRampToValueAtTime(Math.max(50, note.f1), time + OL * 0.4);
+      f1F.frequency.linearRampToValueAtTime(Math.max(50, tF1), time + dur);
+      f1F.Q.value = Math.max(1, note.f1 / note.bw1);
+      var f1G = c.createGain();
+      f1G.gain.value = 1.0;
+      srcG.connect(f1F);
+      f1F.connect(f1G);
+      f1G.connect(env);
+
+      // F2 formant
+      var f2F = c.createBiquadFilter();
+      f2F.type = 'bandpass';
+      f2F.frequency.setValueAtTime(Math.max(50, prev.f2 || note.f2), startT);
+      f2F.frequency.linearRampToValueAtTime(Math.max(50, note.f2), time + OL * 0.4);
+      f2F.frequency.linearRampToValueAtTime(Math.max(50, tF2), time + dur);
+      f2F.Q.value = Math.max(1, note.f2 / note.bw2);
+      var f2G = c.createGain();
+      f2G.gain.value = 0.55;
+      srcG.connect(f2F);
+      f2F.connect(f2G);
+      f2G.connect(env);
+
+      // F3 formant
+      var f3F = c.createBiquadFilter();
+      f3F.type = 'bandpass';
+      f3F.frequency.setValueAtTime(Math.max(50, prev.f3 || note.f3), startT);
+      f3F.frequency.linearRampToValueAtTime(Math.max(50, note.f3), time + OL * 0.4);
+      f3F.frequency.linearRampToValueAtTime(Math.max(50, tF3), time + dur);
+      f3F.Q.value = Math.max(1, note.f3 / note.bw3);
+      var f3G = c.createGain();
+      f3G.gain.value = 0.20;
+      srcG.connect(f3F);
+      f3F.connect(f3G);
+      f3G.connect(env);
+
+      // Formant noise for vocal texture
+      var nDur = dur + OL;
+      var nLen = Math.ceil(c.sampleRate * nDur);
+      var nBuf = c.createBuffer(1, nLen, c.sampleRate);
+      var nDat = nBuf.getChannelData(0);
+      for (var nsi = 0; nsi < nLen; nsi++) {
+        var p = nsi / nLen;
+        var e = p < 0.05 ? p / 0.05 : p > 0.85 ? (1 - p) / 0.15 : 1;
+        nDat[nsi] = (Math.random() * 2 - 1) * e * 0.025;
+      }
+      var nSrc = c.createBufferSource();
+      nSrc.buffer = nBuf;
+      var nFilt = c.createBiquadFilter();
+      nFilt.type = 'bandpass';
+      nFilt.frequency.value = note.f1;
+      nFilt.Q.value = note.f1 / note.bw1;
+      var nGG = c.createGain();
+      nGG.gain.value = note.gain * 0.10 * (voice.breath + 0.5);
+      nSrc.connect(nFilt);
+      nFilt.connect(nGG);
+      nGG.connect(env);
+      nSrc.start(time);
+      nSrc.stop(time + nDur);
+      sources.push(nSrc);
+
+      audit.push({
+        idx: ni, sym: note.sym, type: 'VOWEL', dur: Math.round(note.dur) + 'ms',
+        gain: note.gain, f0: Math.round(f0),
+        f1: Math.round(note.f1), f2: Math.round(note.f2), f3: Math.round(note.f3),
+        target: note.sym + ' ' + VOWELS[note.sym.toLowerCase()].slice(0,3).join('/')
+      });
+
+    } else {
+      // ââ CONSONANT ââ
+      var cDur = dur + OL * 0.5;
+      var isStop = 'PTKBDG'.indexOf(note.sym) >= 0;
+      var isFric = 'FSVZSH'.indexOf(note.sym) >= 0;
+      var isVoiced = 'BDGVZMNLYRW'.indexOf(note.sym) >= 0;
+
+      if (isStop) {
+        // Stop: brief silence dip + release burst
+        var dipG = c.createGain();
+        dipG.gain.setValueAtTime(1.0, time);
+        dipG.gain.exponentialRampToValueAtTime(0.005, time + 0.020);
+        dipG.gain.exponentialRampToValueAtTime(1.0, time + 0.035);
+        dipG.connect(master);
+        var dipBuf = c.createBuffer(1, Math.ceil(c.sampleRate * 0.04), c.sampleRate);
+        var dipSrc = c.createBufferSource();
+        dipSrc.buffer = dipBuf;
+        dipSrc.connect(dipG);
+        dipSrc.start(time);
+        dipSrc.stop(time + 0.04);
+        sources.push(dipSrc);
+
+        // Release burst
+        var bLen = Math.ceil(c.sampleRate * 0.012);
+        var bBuf = c.createBuffer(1, bLen, c.sampleRate);
+        var bDat = bBuf.getChannelData(0);
+        for (var bi = 0; bi < bLen; bi++) {
+          var e = bi < bLen * 0.4 ? bi / (bLen * 0.4) : (bLen - bi) / (bLen * 0.6);
+          bDat[bi] = (Math.random() * 2 - 1) * Math.max(0, e) * 0.25;
+        }
+        var bSrc = c.createBufferSource();
+        bSrc.buffer = bBuf;
+        var bF = c.createBiquadFilter();
+        bF.type = note.sym === 'T' || note.sym === 'D' ? 'highpass' : 'bandpass';
+        bF.frequency.value = note.sym === 'P' || note.sym === 'B' ? 2800 : note.sym === 'T' || note.sym === 'D' ? 4200 : 3200;
+        var bG = c.createGain();
+        bG.gain.value = isVoiced ? 0.15 : 0.22;
+        bSrc.connect(bF);
+        bF.connect(bG);
+        bG.connect(master);
+        bSrc.start(time + 0.020);
+        bSrc.stop(time + 0.032);
+        sources.push(bSrc);
+
+        if (isVoiced) {
+          // Voiced tail
+          var vO = c.createOscillator();
+          vO.type = 'sine';
+          vO.frequency.value = f0v[ni] * 0.72;
+          var vF = c.createBiquadFilter();
+          vF.type = 'bandpass';
+          vF.frequency.value = note.f1;
+          vF.Q.value = 3;
+          var vG = c.createGain();
+          vG.gain.setValueAtTime(0.001, time + 0.035);
+          vG.gain.exponentialRampToValueAtTime(note.gain * 0.08, time + 0.060);
+          vG.gain.exponentialRampToValueAtTime(0.001, time + cDur);
+          vO.connect(vF);
+          vF.connect(vG);
+          vG.connect(master);
+          vO.start(time + 0.035);
+          vO.stop(time + cDur);
+          sources.push(vO);
+        }
+      } else if (isFric || note.sym === 'TH') {
+        // Fricative: noise
+        var fLen = Math.ceil(c.sampleRate * cDur);
+        var fBuf = c.createBuffer(1, fLen, c.sampleRate);
+        var fDat = fBuf.getChannelData(0);
+        for (var fi = 0; fi < fLen; fi++) {
+          var fp = fi / fLen;
+          var fe = fp < 0.04 ? fp / 0.04 : fp > 0.35 ? (1 - fp) / 0.65 : 1;
+          fDat[fi] = (Math.random() * 2 - 1) * fe * 0.06;
+        }
+        var fSrc = c.createBufferSource();
+        fSrc.buffer = fBuf;
+        var ff = c.createBiquadFilter();
+        ff.type = 'bandpass';
+        ff.frequency.value = note.f2;
+        ff.Q.value = 2.5;
+        var fg = c.createGain();
+        fg.gain.value = note.gain * 0.35;
+        fSrc.connect(ff);
+        ff.connect(fg);
+        fg.connect(master);
+        fSrc.start(time);
+        fSrc.stop(time + cDur);
+        sources.push(fSrc);
+      } else {
+        // Nasals/liquids: voiced tone
+        var lO = c.createOscillator();
+        lO.type = 'sine';
+        lO.frequency.value = f0v[ni] * 0.68;
+        var lF = c.createBiquadFilter();
+        lF.type = 'bandpass';
+        lF.frequency.value = note.f2;
+        lF.Q.value = 4;
+        var lG = c.createGain();
+        lG.gain.setValueAtTime(0.001, time);
+        lG.gain.exponentialRampToValueAtTime(note.gain * 0.20, time + cDur * 0.15);
+        lG.gain.setValueAtTime(note.gain * 0.20, time + cDur * 0.5);
+        lG.gain.exponentialRampToValueAtTime(0.001, time + cDur);
+        lO.connect(lF);
+        lF.connect(lG);
+        lG.connect(master);
+        lO.start(time);
+        lO.stop(time + cDur);
+        sources.push(lO);
+      }
+
+      audit.push({
+        idx: ni, sym: note.sym, type: 'CONS/' + (isStop ? 'stop' : isFric ? 'fric' : 'sonor'),
+        dur: Math.round(note.dur) + 'ms', gain: note.gain,
+        f1: Math.round(note.f1), f2: Math.round(note.f2), f3: Math.round(note.f3)
+      });
+    }
+
+    time += dur;
+  }
+
+  lastAudit = audit;
+  var totalS = notes.reduce(function(s, n) { return s + n.dur / 1000; }, 0);
+  log('v92: ' + totalS.toFixed(1) + 's, ' + audit.length + ' phonemes');
+  setTimeout(function() { sources = []; log('Done'); }, totalS * 1000 + 300);
+}
+
+// ââ Web Speech fallback ââ
+function speakWS(text) {
+  if (!window.speechSynthesis) { log('No Web Speech'); return; }
+  var u = new SpeechSynthesisUtterance(text);
+  var v = window.speechSynthesis.getVoices();
+  var e = v.find(function(x) { return x.lang && x.lang.startsWith('en'); });
+  if (e) u.voice = e;
+  u.rate = getVoice().speed * 1.3;
+  u.pitch = getVoice().f0 / 150;
+  window.speechSynthesis.speak(u);
+  log('Web Speech');
+}
+
+// ââ Tone test ââ
+function speakTone(text) {
+  var c = getCtx();
+  var tones = [262, 294, 330, 349, 392, 440, 494, 523];
+  var t = c.currentTime;
+  for (var i = 0; i < text.length; i++) {
+    var o = c.createOscillator();
+    o.type = 'sine';
+    o.frequency.value = tones[text.charCodeAt(i) % 8];
+    var g = c.createGain();
+    g.gain.setValueAtTime(0.1, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    o.connect(g);
+    g.connect(c.destination);
+    o.start(t);
+    o.stop(t + 0.15);
+    sources.push(o);
+    t += 0.08;
+  }
+  log('Tone');
+}
+
+function test() { document.getElementById('ti').value = 'Hello world. This is a test.'; speak(); }
+
+// ââ Audit / Analysis ââ
+function showAudit() {
+  if (!lastAudit.length) { document.getElementById('ab').textContent = 'Speak first, then Show Audit.'; return; }
+  var h = 'AUDIT v92\n';
+  h += '#  PHONE  TYPE         DUR   GAIN  F0   F1   F2   F3\n';
+  h += '--  -----  -----------  ----  ----  ---  ---  ---  ---\n';
+  for (var i = 0; i < lastAudit.length; i++) {
+    var a = lastAudit[i];
+    h += String(a.idx).padStart(2) + '  ' + String(a.sym).padEnd(5) + '  ' + String(a.type).padEnd(11) + '  ';
+    h += String(a.dur).padEnd(4) + '  ' + String(a.gain).padEnd(4) + '  ';
+    h += (a.f0 || '--').padStart(3) + '  ' + String(a.f1 || 0).padStart(3) + '  ';
+    h += String(a.f2 || 0).padStart(3) + '  ' + String(a.f3 || 0).padStart(3);
+    if (a.target) h += '  ' + a.target;
+    h += '\n';
+  }
+  document.getElementById('ab').textContent = h;
+}
+
+function analyze() {
+  if (!lastAudit.length) { document.getElementById('ab').textContent = 'Speak first!'; return; }
+  try {
+    var h = '=== ANALYSIS v92 ===\n\n';
+
+    // Vowel accuracy
+    var vows = lastAudit.filter(function(a) { return a.type === 'VOWEL'; });
+    if (vows.length > 0) {
+      h += '--- VOWEL FORMANTS ---\n';
+      h += 'PHONE  F1(target)  F2(target)  F3(target)\n';
+      h += '-----  ----------  ----------  ----------\n';
+      for (var i = 0; i < vows.length; i++) {
+        var v = vows[i];
+        h += v.sym.padEnd(5) + '  ' + String(v.f1).padStart(4) + '        ' + String(v.f2).padStart(4) + '        ' + String(v.f3).padStart(4) + '\n';
+      }
+    }
+
+    // Distinctiveness
+    if (vows.length >= 2) {
+      h += '\n--- DISTINCTIVENESS ---\n';
+      var pairs = 0, distinct = 0;
+      for (var i = 0; i < vows.length; i++) {
+        for (var j = i + 1; j < vows.length; j++) {
+          pairs++;
+          var dF1 = Math.abs(vows[i].f1 - vows[j].f1);
+          var dF2 = Math.abs(vows[i].f2 - vows[j].f2);
+          if (dF1 > 30 || dF2 > 100) distinct++;
+          h += vows[i].sym + ' vs ' + vows[j].sym + ': dF1=' + dF1 + ' dF2=' + dF2 + (dF1 > 30 || dF2 > 100 ? ' DISTINCT' : ' similar') + '\n';
+        }
+      }
+      h += distinct + '/' + pairs + ' pairs distinct\n';
+    }
+
+    // Timing
+    var cons = lastAudit.filter(function(a) { return a.type && a.type.indexOf('CONS') >= 0; });
+    var vDur = vows.reduce(function(s, a) { return s + (parseInt(a.dur) || 0); }, 0);
+    var cDur = cons.reduce(function(s, a) { return s + (parseInt(a.dur) || 0); }, 0);
+    h += '\n--- TIMING ---\n';
+    h += 'Vowels: ' + vows.length + '  Cons: ' + cons.length + '\n';
+    h += 'Vowel dur: ' + vDur + 'ms  Cons dur: ' + cDur + 'ms\n';
+    h += 'V/C ratio: ' + (cDur > 0 ? (vDur / cDur).toFixed(1) : 'inf') + ':1\n';
+
+    // What user heard
+    h += '\n--- YOUR FEEDBACK ---\n';
+    h += 'Phonetic transcription of what you heard:\n';
+    h += '(e.g., "heh-loh werld")\n';
+    h += '________________\n';
+
+    // Tuning
+    h += '\n--- TUNING ---\n';
+    h += 'If "errf": Try F0=220 or Throat=1.3\n';
+    h += 'Volume: 3x master (independent)\n';
+
+    document.getElementById('ab').textContent = h;
+  } catch (e) {
+    document.getElementById('ab').textContent = 'Error: ' + e.message;
+  }
+}
+
+// ââ Spectrum display ââ
+(function drawSpec() {
+  var cvs = document.getElementById('sc');
+  if (!cvs) { requestAnimationFrame(drawSpec); return; }
+  var c = cvs.getContext('2d'), W = cvs.width, H = cvs.height;
+  c.fillStyle = '#0a0a14';
+  c.fillRect(0, 0, W, H);
+  for (var f = 500; f <= 4000; f += 500) {
+    var x = (f / 4000) * W;
+    c.strokeStyle = '#1a1a2e';
+    c.beginPath();
+    c.moveTo(x, 0);
+    c.lineTo(x, H - 18);
+    c.stroke();
+    c.fillStyle = '#444466';
+    c.font = '9px monospace';
+    c.fillText(f + 'Hz', x - 10, H - 4);
+  }
+  if (analyser) {
+    var data = new Uint8Array(analyser.frequencyBinCount);
+    analyser.getByteFrequencyData(data);
+    var nyq = analyser.context.sampleRate / 2;
+    var mx = Math.min(data.length, Math.floor(data.length * (4000 / nyq)));
+    c.beginPath();
+    c.moveTo(0, H - 18);
+    for (var i = 0; i < mx; i++) {
+      var x = ((i / data.length) * nyq / 4000) * W;
+      var y = (H - 18) - (data[i] / 255) * (H - 25);
+      c.lineTo(x, y);
+    }
+    c.lineTo(W, H - 18);
+    c.closePath();
+    var g = c.createLinearGradient(0, 0, 0, H - 18);
+    g.addColorStop(0, 'rgba(100,200,255,0.6)');
+    g.addColorStop(0.5, 'rgba(60,120,255,0.3)');
+    g.addColorStop(1, 'rgba(20,40,120,0.05)');
+    c.fillStyle = g;
+    c.fill();
+    c.beginPath();
+    for (var i2 = 0; i2 < mx; i2++) {
+      var x2 = ((i2 / data.length) * nyq / 4000) * W;
+      var y2 = (H - 18) - (data[i2] / 255) * (H - 25);
+      if (i2 === 0) c.moveTo(x2, y2); else c.lineTo(x2, y2);
+    }
+    c.strokeStyle = 'rgba(96,165,250,0.8)';
+    c.lineWidth = 1.5;
+    c.stroke();
+  }
+  requestAnimationFrame(drawSpec);
+})();
+
+log('Formant Lab v92 ready');
+</script>
+</body>
+</html>
